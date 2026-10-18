@@ -108,19 +108,28 @@ class KgmDecoder(Decoder):
 
         own_key = crypto_test + b"\x00"  # 17 字节
         audio = bytearray(data[audio_offset:])
+        del data  # 释放原始文件副本，峰值内存从 4× 降到 3×
+        n = len(audio)
         pub_len = len(pub_key)
-        out = bytearray(len(audio))
+        out = bytearray(n)
         # 16 字节一块处理：块内 pub_value 恒定，相位 = 块序号 % 17
-        block_count = (len(audio) + BLOCK - 1) // BLOCK
+        block_count = (n + BLOCK - 1) // BLOCK
+        if block_count > pub_len:
+            raise FormatError(f"{path.name}: 公钥耗尽（文件过大或损坏）")
+        # 关键优化：17 个相位各建一次表，循环内只做索引。
+        # 原实现每块都调 _phase_tables，而它的缓存键含 70MB 的 pub_key，
+        # 650 万次调用会把整个解密拖慢一个数量级。
+        phase_tables = [self._phase_tables(p, own_key, pub_key) for p in range(17)]
+        pk = pub_key
         for block_idx in range(block_count):
-            if block_idx >= pub_len:
-                raise FormatError(f"{path.name}: 公钥耗尽（文件过大或损坏）")
-            phase = block_idx % 17
-            tables = self._phase_tables(phase, own_key, pub_key)
-            pub_value = pub_key[block_idx]
+            tables = phase_tables[block_idx % 17]
+            pub_value = pk[block_idx]
             start = block_idx * BLOCK
-            end = min(start + BLOCK, len(audio))
-            for col, offset in enumerate(range(start, end)):
+            end = start + BLOCK
+            if end > n:
+                end = n
+            for col in range(end - start):
+                offset = start + col
                 out[offset] = tables[col][pub_value][audio[offset]]
         payload = bytes(out)
         return DecodeResult(payload=payload, container=sniff_container(payload[:64]), source=f"kgm-v{crypto_version}")
