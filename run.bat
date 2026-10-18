@@ -9,13 +9,16 @@ rem 首次运行自动创建虚拟环境并安装依赖
 if not exist ".venv\Scripts\python.exe" (
   echo [music-geshizhuanhuan] 首次运行：创建虚拟环境并安装依赖...
   where py >nul 2>nul && (py -3 -m venv .venv) || (python -m venv .venv)
-  ".venv\Scripts\pip" install -q --upgrade pip
-  ".venv\Scripts\pip" install -q -r requirements.txt
+  ".venv\Scripts\python" -m pip install -q --upgrade pip
+  ".venv\Scripts\python" -m pip install -q -r requirements.txt
 )
 
-if /i "%~1"=="web" (
-  shift
-  ".venv\Scripts\python" web\server.py %*
-) else (
-  ".venv\Scripts\python" unlocker.py %*
-)
+rem 用 goto 而不是 if(...) 块：cmd 在括号块里会提前展开 %1，导致 shift 失效
+if /i "%~1"=="web" goto :run_web
+".venv\Scripts\python" unlocker.py %*
+goto :eof
+
+:run_web
+shift
+".venv\Scripts\python" web\server.py %1 %2 %3 %4 %5 %6 %7 %8 %9
+goto :eof
